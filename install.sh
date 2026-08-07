@@ -262,9 +262,11 @@ fi
 
 echo
 ADMIN_CREATED=false
+ADMIN_FRESH=false
 if [ "$READY" = true ]; then
   echo "Creating admin account..."
-  if docker compose exec -T \
+  CREATE_OUTPUT=""
+  if CREATE_OUTPUT=$(docker compose exec -T \
     -e ADMIN_USERNAME="$ADMIN_USER" \
     -e ADMIN_PASSWORD="$ADMIN_PASS" \
     -e ADMIN_TELEGRAM_ID="$ADMIN_TELEGRAM_ID" \
@@ -285,15 +287,39 @@ with GetDB() as db:
     else:
         crud.create_admin(db, AdminCreate(username=username, password=password, is_sudo=True, telegram_id=telegram_id))
         print('Admin created.')
-"; then
+" 2>&1); then
+    echo "$CREATE_OUTPUT"
     ADMIN_CREATED=true
-    echo "=== Done ==="
+    if echo "$CREATE_OUTPUT" | grep -q "Admin created."; then
+      ADMIN_FRESH=true
+    fi
   else
+    echo "$CREATE_OUTPUT" >&2
     echo "=== Admin creation failed -- see the error above ===" >&2
   fi
 else
   echo "=== Container did not report a successful startup within the wait window ===" >&2
   echo "Check what's wrong with: docker compose logs --tail=80" >&2
+fi
+
+# Prove the credentials actually work, instead of just trusting the DB
+# insert -- log in with them for real against the running panel. Skipped
+# when the admin already existed (its password wasn't touched, so testing
+# the just-entered password would give a false negative).
+if [ "$ADMIN_CREATED" = true ] && [ "$ADMIN_FRESH" = true ]; then
+  echo "Verifying login..."
+  LOGIN_RESP=$(curl -fs -X POST "http://127.0.0.1:${INTERNAL_PORT}/api/admin/token" \
+    --data-urlencode "username=${ADMIN_USER}" \
+    --data-urlencode "password=${ADMIN_PASS}" 2>/dev/null || true)
+  if echo "$LOGIN_RESP" | grep -q "access_token"; then
+    echo "Login verified -- these credentials work."
+  else
+    ADMIN_CREATED=false
+    echo "=== Admin exists in the database, but logging in with it just failed! ===" >&2
+    echo "Server response: $LOGIN_RESP" >&2
+  fi
+elif [ "$ADMIN_CREATED" = true ] && [ "$ADMIN_FRESH" = false ]; then
+  echo "An admin with that username already existed -- its password was left unchanged, use the original one."
 fi
 
 if [ "$HAS_DOMAIN" = true ]; then
