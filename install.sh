@@ -261,9 +261,10 @@ if [ "$HAS_DOMAIN" = true ]; then
 fi
 
 echo
+ADMIN_CREATED=false
 if [ "$READY" = true ]; then
   echo "Creating admin account..."
-  docker compose exec -T \
+  if docker compose exec -T \
     -e ADMIN_USERNAME="$ADMIN_USER" \
     -e ADMIN_PASSWORD="$ADMIN_PASS" \
     -e ADMIN_TELEGRAM_ID="$ADMIN_TELEGRAM_ID" \
@@ -284,11 +285,15 @@ with GetDB() as db:
     else:
         crud.create_admin(db, AdminCreate(username=username, password=password, is_sudo=True, telegram_id=telegram_id))
         print('Admin created.')
-"
-  echo "=== Done ==="
+"; then
+    ADMIN_CREATED=true
+    echo "=== Done ==="
+  else
+    echo "=== Admin creation failed -- see the error above ===" >&2
+  fi
 else
-  echo "=== Container is still starting; check 'docker compose logs -f marzban' if the dashboard doesn't load in a minute ==="
-  echo "Once it's up, create the admin yourself with: docker compose exec marzban marzban-cli admin create --sudo"
+  echo "=== Container did not report a successful startup within the wait window ===" >&2
+  echo "Check what's wrong with: docker compose logs --tail=80" >&2
 fi
 
 if [ "$HAS_DOMAIN" = true ]; then
@@ -296,6 +301,13 @@ if [ "$HAS_DOMAIN" = true ]; then
 else
   SERVER_IP=$(curl -fsS -4 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
   echo "Dashboard: http://${SERVER_IP}:${PANEL_PORT}/dashboard/"
+fi
+
+if [ "$ADMIN_CREATED" = false ]; then
+  echo
+  echo "No admin was created yet -- fix whatever docker compose logs shows, then run:"
+  echo "  cd $PROJECT_DIR && docker compose exec marzban marzban-cli admin create --sudo"
+  exit 1
 fi
 echo "Username:  $ADMIN_USER"
 if [ "$GENERATED_PASS" = true ]; then
