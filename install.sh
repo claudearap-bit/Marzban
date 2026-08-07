@@ -1,20 +1,22 @@
 #!/bin/bash
-# One-shot installer for Marzban (Arsi build): asks a couple of questions
-# up front, then installs docker/nginx if needed, builds the panel with
-# docker compose, wires up an nginx reverse proxy on the chosen port, and
-# creates a sudo admin -- no manual steps after this script finishes.
+# One-shot installer for Marzban (Golden Cloud build): asks a couple of
+# questions up front, then installs docker/nginx if needed, builds the
+# panel with docker compose, wires up an nginx reverse proxy (plain port,
+# or a domain with a Let's Encrypt certificate), and creates a sudo admin
+# -- no manual steps after this script finishes.
 #
-# Usage: sudo bash install.sh
+# Usage, either works:
+#   bash <(curl -fsSL https://raw.githubusercontent.com/claudearap-bit/Marzban/claude/project-analysis-ywlc9z/install.sh)
+#   sudo bash install.sh   (after already cloning the repo yourself)
 #
-# This script only manages its own nginx site file ("marzban") and only
-# touches firewall rules if ufw is already active on this host; it never
+# This script only manages its own nginx site file(s) and only touches
+# firewall rules if ufw is already active on this host; it never
 # disables/removes an existing website or nginx site you already have.
 
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NGINX_SITE="/etc/nginx/sites-available/marzban"
-NGINX_LINK="/etc/nginx/sites-enabled/marzban"
+REPO_URL="https://github.com/claudearap-bit/Marzban.git"
+REPO_BRANCH="claude/project-analysis-ywlc9z"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This script needs root privileges. Re-run with: sudo bash install.sh" >&2
@@ -26,14 +28,52 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 
+# Figure out the project directory. If this script is being run from inside
+# an already-cloned checkout (docker-compose.yml next to it), use that. If
+# it's being piped in via curl (e.g. `bash <(curl ...)`), there's no real
+# checkout yet -- clone one.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+if [ -n "$SELF_DIR" ] && [ -f "$SELF_DIR/docker-compose.yml" ]; then
+  PROJECT_DIR="$SELF_DIR"
+else
+  PROJECT_DIR="/opt/marzban"
+  echo "Fetching the panel source into $PROJECT_DIR ..."
+  if ! command -v git >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y -qq git
+  fi
+  if [ -d "$PROJECT_DIR/.git" ]; then
+    git -C "$PROJECT_DIR" fetch origin
+    git -C "$PROJECT_DIR" checkout "$REPO_BRANCH"
+    git -C "$PROJECT_DIR" pull origin "$REPO_BRANCH"
+  else
+    mkdir -p "$PROJECT_DIR"
+    git clone -b "$REPO_BRANCH" "$REPO_URL" "$PROJECT_DIR"
+  fi
+fi
+
+NGINX_SITE="/etc/nginx/sites-available/marzban"
+NGINX_LINK="/etc/nginx/sites-enabled/marzban"
+
 echo "=== Marzban installer ==="
 echo
 
-read -r -p "Panel port [8000]: " PANEL_PORT
-PANEL_PORT=${PANEL_PORT:-8000}
-if ! [[ "$PANEL_PORT" =~ ^[0-9]+$ ]] || [ "$PANEL_PORT" -lt 1 ] || [ "$PANEL_PORT" -gt 65535 ]; then
-  echo "Invalid port '$PANEL_PORT', falling back to 8000." >&2
-  PANEL_PORT=8000
+read -r -p "Свой домен уже направлен на этот сервер (A-записи готовы)? [y/N]: " HAS_DOMAIN_ANSWER
+HAS_DOMAIN=false
+[[ "$HAS_DOMAIN_ANSWER" =~ ^[Yy]$ ]] && HAS_DOMAIN=true
+
+if [ "$HAS_DOMAIN" = true ]; then
+  read -r -p "Домен для панели (например panel.example.com): " PANEL_DOMAIN
+  read -r -p "Домен для подписок (например subs.example.com): " SUBS_DOMAIN
+  read -r -p "Email для уведомлений Let's Encrypt [admin@${PANEL_DOMAIN}]: " CERTBOT_EMAIL
+  CERTBOT_EMAIL=${CERTBOT_EMAIL:-admin@${PANEL_DOMAIN}}
+  PANEL_PORT=443
+else
+  read -r -p "Panel port [8000]: " PANEL_PORT
+  PANEL_PORT=${PANEL_PORT:-8000}
+  if ! [[ "$PANEL_PORT" =~ ^[0-9]+$ ]] || [ "$PANEL_PORT" -lt 1 ] || [ "$PANEL_PORT" -gt 65535 ]; then
+    echo "Invalid port '$PANEL_PORT', falling back to 8000." >&2
+    PANEL_PORT=8000
+  fi
 fi
 
 read -r -p "Admin username [admin]: " ADMIN_USER
@@ -61,7 +101,12 @@ fi
 
 echo
 echo "Installing Marzban:"
-echo "  - Panel reachable on port: $PANEL_PORT"
+if [ "$HAS_DOMAIN" = true ]; then
+  echo "  - Panel reachable on: https://${PANEL_DOMAIN}/dashboard/"
+  echo "  - Subscriptions on:   https://${SUBS_DOMAIN}/"
+else
+  echo "  - Panel reachable on port: $PANEL_PORT"
+fi
 echo "  - Admin username: $ADMIN_USER"
 echo "  - Project directory: $PROJECT_DIR"
 echo
@@ -76,6 +121,12 @@ if ! command -v nginx >/dev/null 2>&1; then
   echo "Installing nginx..."
   apt-get update -qq
   apt-get install -y -qq nginx
+fi
+
+if [ "$HAS_DOMAIN" = true ] && ! command -v certbot >/dev/null 2>&1; then
+  echo "Installing certbot..."
+  apt-get update -qq
+  apt-get install -y -qq certbot python3-certbot-nginx
 fi
 
 # --- .env ---------------------------------------------------------------
@@ -93,13 +144,50 @@ set_env() {
   fi
 }
 
+# Persist both the database and the Xray config into /var/lib/marzban --
+# without this, a plain `docker compose up --build` wipes them back to
+# defaults on every rebuild, since /code inside the image isn't a volume.
 set_env SQLALCHEMY_DATABASE_URL "sqlite:////var/lib/marzban/db.sqlite3"
+set_env XRAY_JSON "/var/lib/marzban/xray_config.json"
 set_env UVICORN_PORT "$INTERNAL_PORT"
+if [ "$HAS_DOMAIN" = true ]; then
+  set_env XRAY_SUBSCRIPTION_URL_PREFIX "https://${SUBS_DOMAIN}"
+fi
 
 mkdir -p /var/lib/marzban
 
 # --- nginx ----------------------------------------------------------------
-cat > "$NGINX_SITE" <<EOF
+if [ "$HAS_DOMAIN" = true ]; then
+  cat > "$NGINX_SITE" <<EOF
+server {
+    listen 80;
+    server_name ${PANEL_DOMAIN};
+    location / {
+        proxy_pass http://127.0.0.1:${INTERNAL_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+server {
+    listen 80;
+    server_name ${SUBS_DOMAIN};
+    location / {
+        proxy_pass http://127.0.0.1:${INTERNAL_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+else
+  cat > "$NGINX_SITE" <<EOF
 server {
     listen $PANEL_PORT;
     server_name _;
@@ -118,16 +206,22 @@ server {
     }
 }
 EOF
+fi
 ln -sf "$NGINX_SITE" "$NGINX_LINK"
 nginx -t
 systemctl reload nginx || systemctl restart nginx
 
 # --- firewall (only touch it if ufw is already active, never enable it) ---
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
-  ufw allow "${PANEL_PORT}/tcp" >/dev/null
+  if [ "$HAS_DOMAIN" = true ]; then
+    ufw allow 80/tcp >/dev/null
+    ufw allow 443/tcp >/dev/null
+  else
+    ufw allow "${PANEL_PORT}/tcp" >/dev/null
+  fi
   ufw allow 1080/tcp >/dev/null
   ufw allow 1080/udp >/dev/null
-  echo "ufw: opened ${PANEL_PORT}/tcp and 1080/tcp+udp"
+  echo "ufw: opened the necessary ports"
 else
   echo "ufw is inactive or not installed, skipping firewall changes."
 fi
@@ -148,6 +242,18 @@ for i in $(seq 1 30); do
   fi
   sleep 2
 done
+
+# --- SSL certificate (domain mode only) --------------------------------
+if [ "$HAS_DOMAIN" = true ]; then
+  echo
+  echo "Requesting SSL certificate..."
+  if ! certbot --nginx --non-interactive --agree-tos -m "$CERTBOT_EMAIL" \
+      -d "$PANEL_DOMAIN" -d "$SUBS_DOMAIN"; then
+    echo "certbot could not issue a certificate automatically (check that DNS already points here)." >&2
+    echo "The panel is still reachable over plain http://${PANEL_DOMAIN}/dashboard/ for now." >&2
+    echo "Retry later with: certbot --nginx -d ${PANEL_DOMAIN} -d ${SUBS_DOMAIN}" >&2
+  fi
+fi
 
 echo
 if [ "$READY" = true ]; then
@@ -180,8 +286,12 @@ else
   echo "Once it's up, create the admin yourself with: docker compose exec marzban marzban-cli admin create --sudo"
 fi
 
-SERVER_IP=$(curl -fsS -4 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
-echo "Dashboard: http://${SERVER_IP}:${PANEL_PORT}/dashboard/"
+if [ "$HAS_DOMAIN" = true ]; then
+  echo "Dashboard: https://${PANEL_DOMAIN}/dashboard/"
+else
+  SERVER_IP=$(curl -fsS -4 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+  echo "Dashboard: http://${SERVER_IP}:${PANEL_PORT}/dashboard/"
+fi
 echo "Username:  $ADMIN_USER"
 if [ "$GENERATED_PASS" = true ]; then
   echo "Password:  $ADMIN_PASS   (auto-generated, save it now)"
