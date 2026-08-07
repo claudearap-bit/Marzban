@@ -54,6 +54,20 @@ fi
 NGINX_SITE="/etc/nginx/sites-available/marzban"
 NGINX_LINK="/etc/nginx/sites-enabled/marzban"
 
+DIM='\033[2;36m'
+BOLD_CYAN='\033[1;36m'
+RESET='\033[0m'
+RULE="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+printf "${DIM}%s${RESET}\n" "$RULE"
+echo
+printf "${BOLD_CYAN}            𝑨 𝑹 𝑺 𝑰             ${RESET}\n"
+echo
+printf "${DIM}    Marzban Panel Installer     ${RESET}\n"
+printf "${DIM}          TG: @oldarsi          ${RESET}\n"
+echo
+printf "${DIM}%s${RESET}\n" "$RULE"
+echo
+
 echo "=== Marzban installer ==="
 echo
 
