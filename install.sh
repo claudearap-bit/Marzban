@@ -156,6 +156,11 @@ fi
 
 mkdir -p /var/lib/marzban
 
+# Seed the persistent config location with the repo's default on first
+# install -- XRayConfig opens this file at container startup and crashes
+# with FileNotFoundError if nothing is there yet.
+[ -f /var/lib/marzban/xray_config.json ] || cp xray_config.json /var/lib/marzban/xray_config.json
+
 # --- nginx ----------------------------------------------------------------
 if [ "$HAS_DOMAIN" = true ]; then
   cat > "$NGINX_SITE" <<EOF
