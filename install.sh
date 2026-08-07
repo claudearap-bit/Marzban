@@ -1,5 +1,5 @@
 #!/bin/bash
-# One-shot installer for Marzban (Golden Cloud build): asks a couple of
+# One-shot installer for Marzban: asks a couple of
 # questions up front, then installs docker/nginx if needed, builds the
 # panel with docker compose, wires up an nginx reverse proxy (plain port,
 # or a domain with a Let's Encrypt certificate), and creates a sudo admin

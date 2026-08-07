@@ -196,7 +196,7 @@ export const EmailSettingsModal: FC = () => {
                       <Input
                         {...field}
                         size="sm"
-                        placeholder="Support Golden Cloud"
+                        placeholder="Support MyBrand"
                         disabled={loading}
                       />
                     )}
