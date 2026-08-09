@@ -38,7 +38,7 @@ export const DeleteUserModal: FC<DeleteUserModalProps> = () => {
     onDeletingUser(null);
   };
   const onDelete = () => {
-    if (user) {
+    if (user && !loading) {
       setLoading(true);
       deleteUser(user)
         .then(() => {
@@ -64,7 +64,14 @@ export const DeleteUserModal: FC<DeleteUserModalProps> = () => {
     }
   };
   return (
-    <Modal isCentered isOpen={!!user} onClose={onClose} size="sm">
+    <Modal
+      isCentered
+      isOpen={!!user}
+      onClose={onClose}
+      size="sm"
+      closeOnOverlayClick={!loading}
+      closeOnEsc={!loading}
+    >
       <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
       <ModalContent mx="3">
         <ModalHeader pt={6}>
@@ -72,7 +79,7 @@ export const DeleteUserModal: FC<DeleteUserModalProps> = () => {
             <DeleteIcon />
           </Icon>
         </ModalHeader>
-        <ModalCloseButton mt={3} />
+        <ModalCloseButton mt={3} isDisabled={loading} />
         <ModalBody>
           <Text fontWeight="semibold" fontSize="lg">
             {t("deleteUser.title")}
@@ -91,7 +98,14 @@ export const DeleteUserModal: FC<DeleteUserModalProps> = () => {
           )}
         </ModalBody>
         <ModalFooter display="flex">
-          <Button size="sm" onClick={onClose} mr={3} w="full" variant="outline">
+          <Button
+            size="sm"
+            onClick={onClose}
+            mr={3}
+            w="full"
+            variant="outline"
+            isDisabled={loading}
+          >
             {t("cancel")}
           </Button>
           <Button
@@ -99,6 +113,7 @@ export const DeleteUserModal: FC<DeleteUserModalProps> = () => {
             w="full"
             colorScheme="red"
             onClick={onDelete}
+            isDisabled={loading}
             leftIcon={loading ? <Spinner size="xs" /> : undefined}
           >
             {t("delete")}
