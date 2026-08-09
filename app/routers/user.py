@@ -176,7 +176,10 @@ def remove_user(
     bg.add_task(xray.operations.remove_user, dbuser=dbuser)
 
     bg.add_task(
-        report.user_deleted, username=dbuser.username, user_admin=Admin.model_validate(dbuser.admin), by=admin
+        report.user_deleted,
+        username=dbuser.username,
+        user_admin=Admin.model_validate(dbuser.admin) if dbuser.admin else None,
+        by=admin,
     )
 
     logger.info(f'User "{dbuser.username}" deleted')
