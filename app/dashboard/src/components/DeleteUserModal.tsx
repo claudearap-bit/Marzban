@@ -14,7 +14,7 @@ import {
 } from "@chakra-ui/react";
 import { TrashIcon } from "@heroicons/react/24/outline";
 import { useDashboard } from "contexts/DashboardContext";
-import { FC, useState } from "react";
+import { FC, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Icon } from "./Icon";
 
@@ -31,37 +31,42 @@ export type DeleteUserModalProps = {
 
 export const DeleteUserModal: FC<DeleteUserModalProps> = () => {
   const [loading, setLoading] = useState(false);
+  const inFlightRef = useRef(false);
   const { deletingUser: user, onDeletingUser, deleteUser } = useDashboard();
   const { t } = useTranslation();
   const toast = useToast();
   const onClose = () => {
+    if (inFlightRef.current) return;
     onDeletingUser(null);
   };
   const onDelete = () => {
-    if (user && !loading) {
-      setLoading(true);
-      deleteUser(user)
-        .then(() => {
-          toast({
-            title: t("deleteUser.deleteSuccess", { username: user.username }),
-            status: "success",
-            isClosable: true,
-            position: "top",
-            duration: 3000,
-          });
-          onClose();
-        })
-        .catch((err) => {
-          toast({
-            title: err?.response?._data?.detail || t("deleteUser.deleteFailed"),
-            status: "error",
-            isClosable: true,
-            position: "top",
-            duration: 4000,
-          });
-        })
-        .finally(setLoading.bind(null, false));
-    }
+    if (!user || inFlightRef.current) return;
+    inFlightRef.current = true;
+    setLoading(true);
+    deleteUser(user)
+      .then(() => {
+        toast({
+          title: t("deleteUser.deleteSuccess", { username: user.username }),
+          status: "success",
+          isClosable: true,
+          position: "top",
+          duration: 3000,
+        });
+        onDeletingUser(null);
+      })
+      .catch((err) => {
+        toast({
+          title: err?.response?._data?.detail || t("deleteUser.deleteFailed"),
+          status: "error",
+          isClosable: true,
+          position: "top",
+          duration: 4000,
+        });
+      })
+      .finally(() => {
+        inFlightRef.current = false;
+        setLoading(false);
+      });
   };
   return (
     <Modal
