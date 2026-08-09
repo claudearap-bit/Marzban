@@ -421,6 +421,10 @@ def remove_user(db: Session, dbuser: User) -> User:
     Returns:
         User: The removed user object.
     """
+    # Bulk-delete first: node_user_usages accumulates one row per user per
+    # node per hour, so relying on the ORM's cascade to load and delete
+    # them one by one can turn this into thousands of round-trips.
+    db.query(NodeUserUsage).filter(NodeUserUsage.user_id == dbuser.id).delete(synchronize_session=False)
     db.delete(dbuser)
     db.commit()
     return dbuser
@@ -434,6 +438,8 @@ def remove_users(db: Session, dbusers: List[User]):
         db (Session): Database session.
         dbusers (List[User]): List of user objects to be removed.
     """
+    user_ids = [dbuser.id for dbuser in dbusers]
+    db.query(NodeUserUsage).filter(NodeUserUsage.user_id.in_(user_ids)).delete(synchronize_session=False)
     for dbuser in dbusers:
         db.delete(dbuser)
     db.commit()
@@ -1159,7 +1165,10 @@ def remove_admin(db: Session, dbadmin: Admin) -> Admin:
     Returns:
         Admin: The removed admin object.
     """
-    for dbuser in list(dbadmin.users):
+    dbusers = list(dbadmin.users)
+    user_ids = [dbuser.id for dbuser in dbusers]
+    db.query(NodeUserUsage).filter(NodeUserUsage.user_id.in_(user_ids)).delete(synchronize_session=False)
+    for dbuser in dbusers:
         db.delete(dbuser)
     db.delete(dbadmin)
     db.commit()
