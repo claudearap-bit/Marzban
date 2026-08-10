@@ -35,6 +35,7 @@ echo "  - $DATA_DIR"
 echo "  - $PROJECT_DIR/.env and $PROJECT_DIR/db.sqlite3"
 echo "  - $XRAY_BIN and $XRAY_ASSETS_DIR"
 echo "  - the $CLI_SYMLINK symlink"
+echo "  - the marz-menu command and its config"
 echo
 echo "The project source at $PROJECT_DIR itself will NOT be deleted."
 echo
@@ -82,6 +83,12 @@ if [ -L "$CLI_SYMLINK" ] || [ -f "$CLI_SYMLINK" ]; then
   rm -f "$CLI_SYMLINK"
 fi
 rm -f /etc/bash_completion.d/marzban-cli.sh 2>/dev/null
+
+if [ -f /usr/local/bin/marz-menu ]; then
+  echo "Removing marz-menu..."
+  rm -f /usr/local/bin/marz-menu
+fi
+rm -rf /etc/marzban
 
 echo
 echo "Marzban has been fully uninstalled. The project source at $PROJECT_DIR was left intact."

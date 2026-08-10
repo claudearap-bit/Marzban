@@ -175,6 +175,14 @@ mkdir -p /var/lib/marzban
 # with FileNotFoundError if nothing is there yet.
 [ -f /var/lib/marzban/xray_config.json ] || cp xray_config.json /var/lib/marzban/xray_config.json
 
+# --- marz-menu (quick-access admin menu) -----------------------------------
+mkdir -p /etc/marzban
+echo "PROJECT_DIR=\"${PROJECT_DIR}\"" > /etc/marzban/marz-menu.conf
+if [ -f "$PROJECT_DIR/marz-menu.sh" ]; then
+  cp "$PROJECT_DIR/marz-menu.sh" /usr/local/bin/marz-menu
+  chmod +x /usr/local/bin/marz-menu
+fi
+
 # --- nginx ----------------------------------------------------------------
 if [ "$HAS_DOMAIN" = true ]; then
   cat > "$NGINX_SITE" <<EOF
@@ -355,5 +363,8 @@ if [ "$GENERATED_PASS" = true ]; then
 else
   echo "Password:  (the one you entered)"
 fi
+echo
+echo "Быстрое меню (обновление, смена домена, перенос на другой сервер, удаление и т.д.):"
+echo "  sudo marz-menu"
 echo
 echo "To fully remove everything later: sudo bash uninstall.sh"
